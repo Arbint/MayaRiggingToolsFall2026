@@ -1,6 +1,12 @@
+import importlib
+import mayaRiggingTools.core.mayaUtilities
+importlib.reload(mayaRiggingTools.core.mayaUtilities)
+
 from mayaRiggingTools.core.mayaWidget import QMayaWidget
-from mayaRiggingTools.core.mayaUtilities import GetParent
+from mayaRiggingTools.core.mayaUtilities import GetParent, CreateFKCircleControllerForJnt, CreateIkBoxControllerForJnt, CreatePlus
 from PySide6.QtWidgets import QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QMessageBox
+from PySide6.QtGui import QRegularExpressionValidator
+
 import maya.cmds as mc
 
 class LimbRiggerException(Exception):
@@ -25,9 +31,23 @@ class LimbRigger:
         if GetParent(selection[2]) != selection[1] or GetParent(selection[1]) != selection[0]:
             raise LimbRiggerException(f"seleted joints are not a limb chain: {selection}")
 
+        self.rootJnt = selection[0]
+        self.midJnt = selection[1]
+        self.endJnt = selection[2]
+
 
     def RigLimb(self):
-        print("rigging")
+        endCtrl, endCtrlGrp = CreateFKCircleControllerForJnt(self.endJnt)
+        midCtrl, midCtrlGrp = CreateFKCircleControllerForJnt(self.midJnt)
+        rootCtrl, rootCtrlGrp = CreateFKCircleControllerForJnt(self.rootJnt)
+
+        # make the fk work.
+        mc.parent(endCtrlGrp, midCtrl)
+        mc.parent(midCtrlGrp, rootCtrl)
+
+        ikEndCtrl, ikEndCtrlGrp = CreateIkBoxControllerForJnt(self.endJnt)
+
+        ikfkBlendCtrl = CreatePlus(self.nameBase + "_ikfk_blend")
 
 
 class LimbRiggerWidget(QMayaWidget):
@@ -45,9 +65,9 @@ class LimbRiggerWidget(QMayaWidget):
         jntInfoLayout = QHBoxLayout()
         masterLayout.addLayout(jntInfoLayout)
         jntInfoLayout.addWidget(QLabel("Joints:"))
-        jntSelectionLineEdit = QLineEdit()
-        jntSelectionLineEdit.setReadOnly(True)
-        jntInfoLayout.addWidget(jntSelectionLineEdit)
+        self.jntSelectionLineEdit = QLineEdit()
+        self.jntSelectionLineEdit.setReadOnly(True)
+        jntInfoLayout.addWidget(self.jntSelectionLineEdit)
         collectJntNameBtn = QPushButton("<<<") 
         collectJntNameBtn.clicked.connect(self.CollectJntNameBtnClicked)
         jntInfoLayout.addWidget(collectJntNameBtn)
@@ -55,15 +75,25 @@ class LimbRiggerWidget(QMayaWidget):
         rigInfoLayout = QHBoxLayout()
         masterLayout.addLayout(rigInfoLayout)
         rigInfoLayout.addWidget(QLabel("name base:"))
-        nameBaseLineEdit = QLineEdit()
-        rigInfoLayout.addWidget(nameBaseLineEdit)
+        self.nameBaseLineEdit = QLineEdit()
+        self.nameBaseLineEdit.setValidator(QRegularExpressionValidator("[a-zA-Z_]+[0-9]*"))
+        rigInfoLayout.addWidget(self.nameBaseLineEdit)
 
         rigBtn = QPushButton("Rig Limb")
+        rigBtn.clicked.connect(self.RigBtnClicked)
         masterLayout.addWidget(rigBtn)
+
+    def RigBtnClicked(self):
+        try:
+            self.rigger.RigLimb()
+        except LimbRiggerException as e:
+            QMessageBox.critical(self, "Failed to rig the limb", f"{e}") 
+
 
     def CollectJntNameBtnClicked(self):
         try:
             self.rigger.CollectSelectionAsJnts()
+            self.jntSelectionLineEdit.setText(f"{self.rigger.rootJnt},{self.rigger.midJnt},{self.rigger.endJnt}")
         except LimbRiggerException as e:
             QMessageBox.critical(self, "Failed to collection Joints", f"{e}") 
 
