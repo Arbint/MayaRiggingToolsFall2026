@@ -3,11 +3,19 @@ import mayaRiggingTools.core.mayaUtilities
 importlib.reload(mayaRiggingTools.core.mayaUtilities)
 
 from mayaRiggingTools.core.mayaWidget import QMayaWidget
-from mayaRiggingTools.core.mayaUtilities import GetParent, CreateFKCircleControllerForJnt, CreateIkBoxControllerForJnt, CreatePlus
+from mayaRiggingTools.core.mayaUtilities import (GetParent,
+                                                CreateFKCircleControllerForJnt,
+                                                CreateIkBoxControllerForJnt,
+                                                CreatePlus,
+                                                GetPosAsMVec,
+                                                PrintVec,
+                                                SetPosToMVec
+                                                )
 from PySide6.QtWidgets import QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QMessageBox
 from PySide6.QtGui import QRegularExpressionValidator
 
 import maya.cmds as mc
+from maya.OpenMaya import MVector
 
 class LimbRiggerException(Exception):
     pass
@@ -47,7 +55,71 @@ class LimbRigger:
 
         ikEndCtrl, ikEndCtrlGrp = CreateIkBoxControllerForJnt(self.endJnt)
 
-        ikfkBlendCtrl = CreatePlus(self.nameBase + "_ikfk_blend")
+
+        ikHandleName = f"ikHandle_{self.nameBase}"
+        mc.ikHandle(n=ikHandleName, sj=self.rootJnt, ee=self.endJnt, sol="ikRPsolver")
+
+        rootJntPos = GetPosAsMVec(self.rootJnt)
+        endJntPos = GetPosAsMVec(self.endJnt)
+        poleVectorValues = mc.getAttr(f"{ikHandleName}.poleVector")[0]
+        poleVector = MVector(poleVectorValues[0], poleVectorValues[1], poleVectorValues[2])
+        poleVector.normalize()
+
+        PrintVec(rootJntPos)
+        PrintVec(endJntPos)
+        PrintVec(poleVector)
+
+        rootToEndVec: MVector = endJntPos - rootJntPos
+        limbLength = rootToEndVec.length()
+
+        poleVectorCtrlPos = rootJntPos + rootToEndVec/2.0 + poleVector * limbLength
+
+        ikMidCtrl = f"ac_ik_{self.midJnt}"
+        mc.spaceLocator(n=ikMidCtrl)
+
+        ikMidCtrlGrp = f"{ikMidCtrl}_grp"
+        mc.group(ikMidCtrl, n=ikMidCtrlGrp)
+
+        SetPosToMVec(ikMidCtrlGrp, poleVectorCtrlPos)
+        mc.poleVectorConstraint(ikMidCtrl, ikHandleName)
+
+        mc.parent(ikHandleName, ikEndCtrl)
+
+        ikfkBlendCtrl = CreatePlus(self.nameBase + "_ikfk_blend", 1)
+        ikfkBlendCtrlGrp = f"{ikfkBlendCtrl}_grp"
+        mc.group(ikfkBlendCtrl, n=ikfkBlendCtrlGrp)
+        ikfkBlendPos = rootJntPos + MVector(rootJntPos.x, 0, 0)
+        SetPosToMVec(ikfkBlendCtrlGrp, ikfkBlendPos)
+
+        ikfkBlendAttrName = "ikfk_blend"
+        mc.addAttr(ikfkBlendCtrl, ln=ikfkBlendAttrName, k=True, min=0, max=1, at="double")
+        ikfkBlendAttr = f"{ikfkBlendCtrl}.{ikfkBlendAttrName}"
+
+        mc.setAttr(f"{ikfkBlendCtrl}.tx", lock=True, channelBox=False, k=False)
+        mc.setAttr(f"{ikfkBlendCtrl}.ty", lock=True, channelBox=False, k=False)
+        mc.setAttr(f"{ikfkBlendCtrl}.tz", lock=True, channelBox=False, k=False)
+
+        mc.setAttr(f"{ikfkBlendCtrl}.sx", lock=True, channelBox=False, k=False)
+        mc.setAttr(f"{ikfkBlendCtrl}.sy", lock=True, channelBox=False, k=False)
+        mc.setAttr(f"{ikfkBlendCtrl}.sz", lock=True, channelBox=False, k=False)
+
+        mc.setAttr(f"{ikfkBlendCtrl}.rx", lock=True, channelBox=False, k=False)
+        mc.setAttr(f"{ikfkBlendCtrl}.ry", lock=True, channelBox=False, k=False)
+        mc.setAttr(f"{ikfkBlendCtrl}.rz", lock=True, channelBox=False, k=False)
+
+        mc.setAttr(f"{ikfkBlendCtrl}.v", lock=True, channelBox=False, k=False)
+
+        endOrientConstraint = mc.orientConstraint(ikEndCtrl, self.endJnt)[0]
+
+        mc.expression(s=f"{ikHandleName}.ikBlend={ikfkBlendAttr};")
+        mc.expression(s=f"{ikEndCtrlGrp}.v={ikfkBlendAttr};")
+        mc.expression(s=f"{ikMidCtrlGrp}.v={ikfkBlendAttr};")
+
+        # finish the rest of the rig:
+        # 1, control the fk visibility with expression, you only need one line to do this
+        # 2, control the ikfk blend for the wrist rotation with expression, should be 2 lines, each controls one of the weight on the orient constraint
+        # 3, group everything into a group with the name self.nameBase+"_rig_grp"
+        
 
 
 class LimbRiggerWidget(QMayaWidget):
@@ -85,6 +157,7 @@ class LimbRiggerWidget(QMayaWidget):
 
     def RigBtnClicked(self):
         try:
+            self.rigger.nameBase = self.nameBaseLineEdit.text()
             self.rigger.RigLimb()
         except LimbRiggerException as e:
             QMessageBox.critical(self, "Failed to rig the limb", f"{e}") 

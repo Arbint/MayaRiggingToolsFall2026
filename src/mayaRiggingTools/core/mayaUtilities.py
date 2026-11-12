@@ -1,5 +1,6 @@
 import maya.cmds as mc
 import maya.mel as mel
+from maya.OpenMaya import MVector
 
 def GetParent(objectToGetParent):
     parent = mc.listRelatives(objectToGetParent, p=True)
@@ -49,3 +50,15 @@ def CreatePlus(name, size):
     return name
 
 
+def GetPosAsMVec(Object)->MVector:
+    # q means we are querying, t means we query translate, ws means world space.
+    positions = mc.xform(Object, q=True, t=True, ws=True) # returns [x, y, z] where x, y, z, is the x, y, z tranlsation
+    return MVector(positions[0], positions[1], positions[2])
+
+
+def PrintVec(vec: MVector):
+    print(f"<{vec.x},{vec.y},{vec.z}>")
+
+
+def SetPosToMVec(Object, vec: MVector):
+    mc.xform(Object, t=(vec.x, vec.y, vec.z), ws=True) 
