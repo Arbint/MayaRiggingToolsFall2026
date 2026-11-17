@@ -117,9 +117,14 @@ class LimbRigger:
 
         # finish the rest of the rig:
         # 1, control the fk visibility with expression, you only need one line to do this
+        mc.expression(s=f"{rootCtrlGrp}.v=1-{ikfkBlendAttr};")
+
         # 2, control the ikfk blend for the wrist rotation with expression, should be 2 lines, each controls one of the weight on the orient constraint
+        mc.expression(s=f"{endOrientConstraint}.{endCtrl}W0=1-{ikfkBlendAttr};")
+        mc.expression(s=f"{endOrientConstraint}.{ikEndCtrl}W1={ikfkBlendAttr};")
+
         # 3, group everything into a group with the name self.nameBase+"_rig_grp"
-        
+        mc.group(ikfkBlendCtrlGrp, ikEndCtrlGrp, ikMidCtrlGrp, rootCtrlGrp, n=self.nameBase + "_rig_grp")        
 
 
 class LimbRiggerWidget(QMayaWidget):
